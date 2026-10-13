@@ -82,3 +82,34 @@ provides a live interactive terminal.
 Useful CLI docs:
 https://github.com/Kaggle/kaggle-cli/blob/main/docs/kernels.md
 https://github.com/Kaggle/kaggle-cli/blob/main/docs/kernels_metadata.md
+
+## Kaggle T4 x2 and the OOM gate
+
+Kaggle's `NvidiaTeslaT4` accelerator can provide **two** T4 GPUs in a
+single Kaggle kernel. Confirm availability in each session:
+
+```python
+import torch
+print(torch.cuda.device_count())
+for i in range(torch.cuda.device_count()):
+    print(i, torch.cuda.get_device_name(i))
+```
+
+The training notebook now loads the base model through `load_base_model()`.
+If it sees two CUDA devices, it uses Hugging Face's
+`device_map="balanced"` in one Python process with an 11 GiB placement budget
+per GPU. This is model sharding, **not DDP**: do not launch `torchrun` or
+`accelerate launch` with two processes, which would duplicate the model.
+The placement is visible through `model.hf_device_map` and MUST be verified
+on the running GPUs.
+
+The original OOM occurred when Qwen3-VL generated logits for every image,
+prompt and answer token. `answer_only_loss` now restricts the LM head to the
+answer-supervised tail, preserving the masked next-token cross-entropy. The
+training micro-batch is 1 with accumulation 8, retaining effective batch 8.
+Smoke-test first; automatic sharding is a heuristic and may still OOM.
+
+After an OOM restart the Kaggle kernel to release retained model tensors before
+retrying. Model-sharding support for training is less mature than for inference,
+so only mark the GPU gate passed after real forward, backward, gradient check,
+and projector safetensors round-trip on Kaggle. Log per-device peak VRAM.
