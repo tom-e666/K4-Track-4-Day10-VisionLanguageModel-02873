@@ -91,7 +91,13 @@ Họ tên: Thái Phúc Tiến
   1. *Hình học dạng sợi và tỷ lệ khung hình cực đoan*: Vết nứt trải dài ngoằn ngoèo, mỏng mảnh. Khi ảnh 640×360 bị nén qua ViT thành 220 visual tokens, tín hiệu pixel của các khe nứt hẹp bị tiêu biến hoặc nhạt nhòa.
   2. *Hạn chế của Bounding Box*: Bounding box chữ nhật bao quanh một vết nứt chéo mảnh sẽ chứa tới 80–90% diện tích là mặt đường bình thường, gây nhiễu nghiêm trọng cho hàm tính IoU.
   3. *Nhầm lẫn ngữ nghĩa (Semantic confusion)*: Mô hình thường xuyên đoán nhầm các đường nối bê tông, vệt dầu loang, vệt phanh lốp hoặc bóng cây thành vết nứt, khiến số lượng False Positive tăng vọt (Precision chỉ đạt 0.165).
-- **Minh hoạ**: Các ảnh dự đoán đúng/sai được lưu tại thư mục `report/sample_vis_1.jpg` đến `report/sample_vis_6.jpg`.
+- **Minh hoạ (6 ảnh mẫu trích xuất từ mô hình E3 trên tập test)**:
+  - `report/sample_vis_1.jpg` (`vlcsnap-00200`): **TP `crack`** (IoU ~0.83) khớp chuẩn vết nứt ngang giữa làn đường, **FN `manhole`** (bỏ sót nắp cống nhỏ mờ ở góc xa bên phải).
+  - `report/sample_vis_2.jpg` (`vlcsnap-00201`): **TP `crack`** (IoU ~0.65) phát hiện đúng vệt nứt kéo dài bên phải, **FN `manhole`** (bỏ sót nắp cống ở mép phải).
+  - `report/sample_vis_3.jpg` (`vlcsnap-00202`): **TP `manhole`** hoàn hảo (IoU ~0.88), định vị chính xác vị trí và kích thước nắp cống kim loại tròn giữa lòng đường.
+  - `report/sample_vis_4.jpg` (`vlcsnap-00205`): **TP 2 `crack`** (bắt trọn cả 2 vết nứt bên trái và bên phải đường), kèm **1 FP `crack`** do nhầm lẫn vệt sẫm màu ở giữa làn đường.
+  - `report/sample_vis_5.jpg` (`vlcsnap-00206`): **TP `manhole`** xuất sắc (IoU ~0.91), bao trọn nắp cống hình tròn với độ lệch tọa độ không đáng kể.
+  - `report/sample_vis_6.jpg` (`vlcsnap-00207`): **TP `crack`** bao trọn vết nứt lớn, đồng thời xuất hiện **1 FP `pothole`** do mô hình nhầm tâm hõm sâu bên trong vết nứt thành một ổ gà.
 
 ### Câu 10 — E4: bạn đổi biến nào, kết quả thế nào, và kết luận có đáng tin không?
 - **Biến được chọn**: `data_size` (so sánh giữa 100% dữ liệu train = 1.422 ảnh vs 10% dữ liệu train = 142 ảnh trên cùng kiến trúc E2 LoRA LLM + Projector float32).
