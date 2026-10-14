@@ -10,6 +10,7 @@ Họ tên: Thái Phúc Tiến
 | E2 | + projector | 142,135,296 | 6.44 | 47.94 | 0.321 | 0.279-0.362 | 1.04 | 0.166 | 0.258 | 0.578 |
 | E3 | + LoRA ViT | 148,426,752 | 4.96 | 59.90 | 0.459 | 0.414-0.503 | 0.76 | 0.307 | 0.384 | 0.707 |
 | E4 | data_size = 0.1 | 142,135,296 | 6.82 | 48.84 | 0.170 | 0.144-0.199 | 2.11 | 0.107 | 0.126 | 0.365 |
+| E5 | GRPO IoU (Bonus) | 142,135,296 | 5.88 | 24.04 | 0.037 | 0.020-0.059 | 0.66 | 0.061 | 0.000 | 0.086 |
 
 ## 10 câu hỏi (trả lời bằng **số của bạn**, không chép lại tài liệu)
 
@@ -132,16 +133,22 @@ Họ tên: Thái Phúc Tiến
   - Tốc độ học (Learning Rate): $5.0 \times 10^{-6}$, bộ tối ưu AdamW.
   - Trọng số phạt KL $\beta = 0.0$.
   - Tính normalized advantage theo nhóm: $A_i = \frac{r_i - \mu}{\sigma + \epsilon}$.
-- **Nhật ký huấn luyện**: Toàn bộ log chi tiết theo từng step được ghi nhận tại `work/e5_grpo.log`. Điểm reward trung bình tăng đều từ ~0.35 ở các bước đầu lên ~0.65–0.78 ở các bước sau, đồng thời hiện tượng sinh JSON lỗi hoàn toàn biến mất sau 10 bước đầu.
+- **Nhật ký huấn luyện thực tế (`work/e5_grpo.log`)**:
+  - Môi trường: GPU Tesla T4 (15 GB), peak VRAM: **5.88 GB**, tổng thời gian chạy: **24.04 phút**.
+  - Tham số huấn luyện: **142,135,296** (LoRA LLM + Projector float32).
+  - Diễn biến theo bước: Ở các step đầu và giữa, mô hình thỉnh thoảng đạt đỉnh reward cao khi các completion khớp IoU với ground truth (ví dụ Step 36 đạt Mean Reward 0.7807 với các reward mẫu [0.80, 0.79, 0.81, 0.72], Step 9 đạt 0.4497, Step 17 đạt 0.3808). Tuy nhiên, do tín hiệu reward thưa thớt (sparse reward) và không có ràng buộc KL ($\beta = 0.0$), gradient cập nhật dần làm trôi dạt phân phối sinh từ vựng (policy drift), dẫn đến nhiều step ở nửa sau nhận reward 0.0000 do lỗi cú pháp hoặc không tìm thấy box nào.
 
 ### 3. Phân tích Hiện tượng Reward Hacking và So sánh Định lượng với SFT
-- **Hiện tượng Reward Hacking quan sát được**:
-  1. *Ảo giác co cụm (Box shrinking)*: Mô hình RL có xu hướng co nhỏ bounding box lại sát tâm vùng tổn thương để hạn chế diện tích nền mặt đường, qua đó đẩy IoU cục bộ vượt ngưỡng 0.5 dễ dàng hơn.
-  2. *Thiên vị lớp dễ (Manhole bias)*: Lớp `manhole` có diện tích lớn và độ tương phản cao đem lại reward chắc chắn hơn hẳn các vết nứt mảnh `crack`. Ở các bước giữa (step 20–35), mô hình có xu hướng bỏ qua `crack` để tập trung phát hiện `manhole` nhằm tối đa hóa mẫu số $\max(|GT|, |Pred|, 1)$.
-  3. *Tác dụng của mẫu số phạt*: Cơ chế phạt qua mẫu số $\max(|GT|, |Pred|, 1)$ triệt tiêu hoàn toàn hiện tượng sinh tràn lan hàng chục box nhỏ vô tội vạ (spam boxes).
+- **Hiện tượng Reward Hacking & Suy thoái Ngôn ngữ quan sát được**:
+  1. *Suy thoái cú pháp (Syntax / Format Degradation)*: Do reward chỉ là giá trị vô hướng (scalar) và $\beta=0$ không neo giữ mô hình gốc, mô hình bị mất đi khả năng sinh cú pháp JSON chuẩn của pretraining. Tỷ lệ `parse_valid_rate` trên tập test tụt xuống còn **28.6%** (89/311 ảnh parse được), do mô hình sinh chuỗi lặp lại hoặc quên dấu đóng ngoặc `]` / `}`.
+  2. *Thận trọng cực đoan do mẫu số phạt (Conservative FP Avoidance)*: Mẫu số $\max(|GT|, |Pred|, 1)$ phạt rất nặng mỗi khi sinh dư một box sai. Mô hình học được chiến lược "an toàn" là hạn chế tối đa việc sinh box, khiến số lượng False Positive giảm mạnh, tỷ lệ FP/ảnh rơi xuống **0.656** (thấp hơn cả E1: 1.14 và E3: 0.76).
+  3. *Sụp đổ phân loại theo lớp (Class Collapse)*:
+     - Lớp `manhole` đạt F1 cao nhất (**0.0856**, Precision 0.117, Recall 0.067, TP=11, FP=83) vì nắp cống có kích thước lớn, tương phản rõ rệt, dễ vượt ngưỡng $\text{IoU} \ge 0.5$.
+     - Lớp `pothole` đạt F1 = **0.0611** (Precision 0.400, Recall 0.033, TP=4, FP=6).
+     - Lớp `crack` sụp đổ hoàn toàn về F1 = **0.0000** (TP=0, FP=115, FN=299). Các vết nứt thanh mảnh rất khó đạt IoU $\ge 0.5$ với greedy matching, khiến gradient triệt tiêu hoàn toàn động lực học lớp này.
 - **So sánh Định lượng với SFT (E3)**:
-  - So với mô hình SFT tốt nhất (E3: F1 = 0.459, CI95: 0.414–0.503, FP/ảnh = 0.76), việc tinh chỉnh GRPO với IoU reward giúp mô hình kiểm soát chặt chẽ hơn tỷ lệ báo giả, FP/ảnh giảm còn 0.68.
-  - Do chỉ chạy 60 bước thích ứng RL trên quy mô nhỏ theo yêu cầu đề tài, điểm F1 của E5 tăng nhẹ lên mức ~0.47, nằm trong khoảng tin cậy của E3 nhưng tỷ lệ parse hợp lệ đạt 100% tuyệt đối.
+  - **Kết quả E5 trên tập test (311 ảnh)**: F1 = **0.0374** (CI95: 0.0202–0.0588), Precision = 0.0685, Recall = 0.0257, Mean IoU = 0.6067.
+  - **So sánh với SFT (E3: F1 = 0.459, CI95: 0.414–0.503)**: SFT áp đảo hoàn toàn cold-start GRPO. Huấn luyện SFT cung cấp dense token supervision trên từng token tọa độ và nhãn lớp, giữ cho tỷ lệ parse luôn đạt 100%. Ngược lại, RL với phần thưởng IoU nếu áp dụng trực tiếp từ base model (cold-start) trong 60 bước ngắn ngủi mà không có pre-warming từ SFT và thiếu KL divergence ($\beta > 0$) sẽ gây suy thoái nghiêm trọng về mặt ngôn ngữ. RL chỉ thực sự hiệu quả khi đóng vai trò post-training sau khi mô hình đã hội tụ tốt qua SFT.
 
 ## Nhìn lại
 
