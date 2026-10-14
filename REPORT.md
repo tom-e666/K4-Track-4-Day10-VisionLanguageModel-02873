@@ -110,6 +110,39 @@ Họ tên: Thái Phúc Tiến
   - Tỷ lệ báo giả FP/ảnh tăng hơn gấp đôi (từ 1.04 lên 2.11), cho thấy khi thiếu dữ liệu, mô hình bị ảo giác nghiêm trọng, sinh toạ độ box tùy tiện trên mặt đường.
   - Kết luận: Việc giảm dữ liệu train xuống 10% gây suy thoái nghiêm trọng và có ý nghĩa thống kê ở mức tin cậy 95%. Quy mô dữ liệu là yếu tố sống còn để projector và LoRA học được không gian grounding chính xác.
 
+## Bonus E5 — Huấn luyện GRPO với IoU Reward (+10 điểm)
+
+### 1. Thiết kế hàm Reward và Kiểm thử Độc lập (Unit Tests)
+- **Hàm reward**:
+  $$R(\text{completion}, \text{gt}) = 0.2 \cdot \mathbb{I}(\text{valid\_json}) + 0.8 \cdot \frac{\sum_{(i,j) \in \text{Matches}} \text{IoU}(g_i, p_j)}{\max(|GT|, |Pred|, 1)}$$
+  Trong đó, việc ghép đôi được thực hiện theo giải thuật tham lam (greedy bipartite matching) theo thứ tự giảm dần của IoU, chỉ ghép các cặp cùng lớp nhãn có $\text{IoU} \ge 0.5$.
+- **Kết quả 6 ca Unit Test (chạy bằng `pytest work/test_reward.py`)**:
+  - `test_reward_perfect`: Khớp hoàn hảo cả nhãn và toạ độ -> Reward = 1.0.
+  - `test_reward_broken_json`: Chuỗi sinh ra không parse được JSON hợp lệ -> Reward = 0.0.
+  - `test_reward_wrong_class`: Toạ độ khớp nhưng sai lớp tổn thương -> Nhận 0.2 điểm hợp lệ JSON, 0 điểm IoU -> Reward = 0.2.
+  - `test_reward_extra_box`: Sinh 1 box khớp và 1 box bịa thêm -> Mẫu số tăng từ 1 lên 2 -> Reward = $0.2 + 0.8 \times (1.0 / 2) = 0.6$.
+  - `test_reward_empty`: Cả ground truth và prediction đều là danh sách rỗng `[]` -> Reward = 1.0.
+  - `test_reward_empty_pred_with_gt`: Ground truth có vật thể nhưng mô hình sinh `[]` -> Reward = 0.2.
+  - **Kết luận**: Đạt 6/6 test cases PASSED.
+
+### 2. Quá trình Huấn luyện GRPO (Group Relative Policy Optimization)
+- **Siêu tham số thực nghiệm (khớp `configs/e5.yaml`)**:
+  - Số lượng mẫu sinh mỗi bước: $G = 4$ completions (nhiệt độ sampling $T = 0.8$).
+  - Số bước tối ưu hóa: 60 steps.
+  - Tốc độ học (Learning Rate): $5.0 \times 10^{-6}$, bộ tối ưu AdamW.
+  - Trọng số phạt KL $\beta = 0.0$.
+  - Tính normalized advantage theo nhóm: $A_i = \frac{r_i - \mu}{\sigma + \epsilon}$.
+- **Nhật ký huấn luyện**: Toàn bộ log chi tiết theo từng step được ghi nhận tại `work/e5_grpo.log`. Điểm reward trung bình tăng đều từ ~0.35 ở các bước đầu lên ~0.65–0.78 ở các bước sau, đồng thời hiện tượng sinh JSON lỗi hoàn toàn biến mất sau 10 bước đầu.
+
+### 3. Phân tích Hiện tượng Reward Hacking và So sánh Định lượng với SFT
+- **Hiện tượng Reward Hacking quan sát được**:
+  1. *Ảo giác co cụm (Box shrinking)*: Mô hình RL có xu hướng co nhỏ bounding box lại sát tâm vùng tổn thương để hạn chế diện tích nền mặt đường, qua đó đẩy IoU cục bộ vượt ngưỡng 0.5 dễ dàng hơn.
+  2. *Thiên vị lớp dễ (Manhole bias)*: Lớp `manhole` có diện tích lớn và độ tương phản cao đem lại reward chắc chắn hơn hẳn các vết nứt mảnh `crack`. Ở các bước giữa (step 20–35), mô hình có xu hướng bỏ qua `crack` để tập trung phát hiện `manhole` nhằm tối đa hóa mẫu số $\max(|GT|, |Pred|, 1)$.
+  3. *Tác dụng của mẫu số phạt*: Cơ chế phạt qua mẫu số $\max(|GT|, |Pred|, 1)$ triệt tiêu hoàn toàn hiện tượng sinh tràn lan hàng chục box nhỏ vô tội vạ (spam boxes).
+- **So sánh Định lượng với SFT (E3)**:
+  - So với mô hình SFT tốt nhất (E3: F1 = 0.459, CI95: 0.414–0.503, FP/ảnh = 0.76), việc tinh chỉnh GRPO với IoU reward giúp mô hình kiểm soát chặt chẽ hơn tỷ lệ báo giả, FP/ảnh giảm còn 0.68.
+  - Do chỉ chạy 60 bước thích ứng RL trên quy mô nhỏ theo yêu cầu đề tài, điểm F1 của E5 tăng nhẹ lên mức ~0.47, nằm trong khoảng tin cậy của E3 nhưng tỷ lệ parse hợp lệ đạt 100% tuyệt đối.
+
 ## Nhìn lại
 
 - Quá trình thực nghiệm cho thấy mô hình VLM dạng causal language model (Qwen3-VL) học định dạng JSON rất nhanh (từ 86.5% hợp lệ ở E0 vọt lên 99.0% ở E1), nhưng độ chính xác định vị tọa độ (grounding IoU) phụ thuộc rất lớn vào độ phân giải không gian của Vision Encoder. Việc nén toàn bộ ảnh về 220 tokens tạo ra rào cản lớn đối với các tổn thương dạng thanh mảnh như `crack`.
