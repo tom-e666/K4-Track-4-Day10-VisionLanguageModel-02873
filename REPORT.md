@@ -9,7 +9,7 @@ Họ tên: Thái Phúc Tiến
 | E1 | LoRA LLM | 33,030,144 | 2.98 | 47.25 | 0.259 | 0.222-0.301 | 1.14 | 0.190 | 0.171 | 0.527 |
 | E2 | + projector | 142,135,296 | 6.44 | 47.94 | 0.321 | 0.279-0.362 | 1.04 | 0.166 | 0.258 | 0.578 |
 | E3 | + LoRA ViT | 148,426,752 | 4.96 | 59.90 | 0.459 | 0.414-0.503 | 0.76 | 0.307 | 0.384 | 0.707 |
-| E4 | data_size = 0.1 | 142,135,296 | [E4_VRAM] | [E4_MINS] | [E4_F1] | [E4_CI95] | [E4_FP] | [E4_POT] | [E4_CRK] | [E4_MAN] |
+| E4 | data_size = 0.1 | 142,135,296 | 6.82 | 48.84 | 0.170 | 0.144-0.199 | 2.11 | 0.107 | 0.126 | 0.365 |
 
 ## 10 câu hỏi (trả lời bằng **số của bạn**, không chép lại tài liệu)
 
@@ -94,11 +94,15 @@ Họ tên: Thái Phúc Tiến
 - **Minh hoạ**: Các ảnh dự đoán đúng/sai được lưu tại thư mục `report/sample_vis_1.jpg` đến `report/sample_vis_6.jpg`.
 
 ### Câu 10 — E4: bạn đổi biến nào, kết quả thế nào, và kết luận có đáng tin không?
-- **Biến được chọn**: `data_size` (so sánh giữa 100% dữ liệu train = 1.422 ảnh vs 10% dữ liệu train = 142 ảnh).
+- **Biến được chọn**: `data_size` (so sánh giữa 100% dữ liệu train = 1.422 ảnh vs 10% dữ liệu train = 142 ảnh trên cùng kiến trúc E2 LoRA LLM + Projector float32).
 - **Kết quả đối chiếu**:
-  - `data_size = 1.0` (E2): F1 = **0.321** (CI95: 0.279–0.362).
-  - `data_size = 0.1` (`E4_data_0.1`): F1 = [E4_F1] (CI95: [E4_CI95]).
-- **Độ tin cậy của kết luận**: So sánh khoảng cách CI95 giữa hai mức dữ liệu. Khi giảm dữ liệu xuống còn 1/10, F1 sụt giảm rõ rệt. Nếu khoảng tin cậy của E4 tách biệt hoàn toàn khỏi E2, kết luận "quy mô dữ liệu đóng vai trò quyết định đối với khả năng định vị tổn thất mặt đường của mô hình VLM" là hoàn toàn vững chắc và có ý nghĩa thống kê.
+  - `data_size = 1.0` (E2): F1 = **0.321** (CI95: 0.279–0.362), Precision = 0.349, Recall = 0.297, FP/ảnh = 1.04.
+  - `data_size = 0.1` (`E4_data_0.1`): F1 = **0.170** (CI95: 0.144–0.199), Precision = 0.149, Recall = 0.197, FP/ảnh = 2.11.
+- **Độ tin cậy của kết luận**: 
+  - F1 sụt giảm gần một nửa (từ 0.321 xuống 0.170, giảm 0.151 điểm F1).
+  - Khoảng tin cậy CI95 của E4 ([0.144, 0.199]) và E2 ([0.279, 0.362]) **tách biệt hoàn toàn**, khoảng cách giữa cận trên của E4 (0.199) và cận dưới của E2 (0.279) là **0.080 tuyệt đối (không hề chồng lấn)**.
+  - Tỷ lệ báo giả FP/ảnh tăng hơn gấp đôi (từ 1.04 lên 2.11), cho thấy khi thiếu dữ liệu, mô hình bị ảo giác nghiêm trọng, sinh toạ độ box tùy tiện trên mặt đường.
+  - Kết luận: Việc giảm dữ liệu train xuống 10% gây suy thoái nghiêm trọng và có ý nghĩa thống kê ở mức tin cậy 95%. Quy mô dữ liệu là yếu tố sống còn để projector và LoRA học được không gian grounding chính xác.
 
 ## Nhìn lại
 
